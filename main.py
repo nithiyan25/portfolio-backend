@@ -44,7 +44,7 @@ DB_CONFIG = {
 
 # Email configuration
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))  # Changed to 465
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
 RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
@@ -112,7 +112,7 @@ def get_db_connection():
         print(f"Error connecting to MySQL: {e}")
         raise HTTPException(status_code=500, detail="Database connection failed")
 
-# Email Function
+# Email Function - UPDATED FOR PORT 465
 def send_email(contact: ContactMessage):
     """Send email notification when someone contacts via the portfolio"""
     msg = MIMEMultipart("alternative")
@@ -148,10 +148,11 @@ def send_email(contact: ContactMessage):
     msg.attach(part2)
 
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
+        # Use SMTP_SSL for port 465 instead of SMTP with starttls
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
+        print(f"Email sent successfully to {RECEIVER_EMAIL}")
         return True
     except Exception as e:
         print(f"Error sending email: {str(e)}")
@@ -325,8 +326,9 @@ async def contact(contact_data: ContactMessage):
         connection.commit()
         
         # Send email if configured
+        email_sent = False
         if all([SENDER_EMAIL, SENDER_PASSWORD, RECEIVER_EMAIL]):
-            send_email(contact_data)
+            email_sent = send_email(contact_data)
         
         return ContactResponse(
             success=True,
@@ -385,7 +387,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=5000)
-
-
