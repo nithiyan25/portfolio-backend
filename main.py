@@ -2,9 +2,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 import os
 from dotenv import load_dotenv
 import mysql.connector
@@ -42,11 +41,9 @@ DB_CONFIG = {
     'ssl_verify_cert': False,   
 }
 
-# Email configuration
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))  # Changed to 465
+# Email configuration - SENDGRID
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
 RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
 
 # Pydantic Models
@@ -112,15 +109,11 @@ def get_db_connection():
         print(f"Error connecting to MySQL: {e}")
         raise HTTPException(status_code=500, detail="Database connection failed")
 
-# Email Function - UPDATED FOR PORT 465
+# Email Function - SENDGRID VERSION
 def send_email(contact: ContactMessage):
-    """Send email notification when someone contacts via the portfolio"""
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"Portfolio Contact: {contact.name}"
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = RECEIVER_EMAIL
-
-    html = f"""
+    """Send email notification using SendGrid"""
+    
+    html_content = f"""
     <html>
       <body style="font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f4;">
         <div style="max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
@@ -135,27 +128,31 @@ def send_email(contact: ContactMessage):
               <p style="margin: 0; line-height: 1.6; color: #333;">{contact.message}</p>
             </div>
           </div>
+          <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
+            <p style="color: #999; font-size: 12px;">Reply to: {contact.email}</p>
+          </div>
         </div>
       </body>
     </html>
     """
-
-    text = f"Name: {contact.name}\nEmail: {contact.email}\n\nMessage:\n{contact.message}"
     
-    part1 = MIMEText(text, "plain")
-    part2 = MIMEText(html, "html")
-    msg.attach(part1)
-    msg.attach(part2)
-
+    message = Mail(
+        from_email=SENDER_EMAIL,
+        to_emails=RECEIVER_EMAIL,
+        subject=f"Portfolio Contact: {contact.name}",
+        html_content=html_content
+    )
+    
+    # Set reply-to as the contact's email
+    message.reply_to = contact.email
+    
     try:
-        # Use SMTP_SSL for port 465 instead of SMTP with starttls
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
-        print(f"Email sent successfully to {RECEIVER_EMAIL}")
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        print(f"Email sent successfully! Status code: {response.status_code}")
         return True
     except Exception as e:
-        print(f"Error sending email: {str(e)}")
+        print(f"Error sending email via SendGrid: {str(e)}")
         return False
 
 # API Endpoints
@@ -327,8 +324,10 @@ async def contact(contact_data: ContactMessage):
         
         # Send email if configured
         email_sent = False
-        if all([SENDER_EMAIL, SENDER_PASSWORD, RECEIVER_EMAIL]):
+        if all([SENDGRID_API_KEY, SENDER_EMAIL, RECEIVER_EMAIL]):
             email_sent = send_email(contact_data)
+            if not email_sent:
+                print("Warning: Email sending failed, but message was saved to database")
         
         return ContactResponse(
             success=True,
@@ -381,7 +380,7 @@ async def health_check():
     return {
         "status": "healthy",
         "database_connected": db_connected,
-        "email_configured": all([SENDER_EMAIL, SENDER_PASSWORD, RECEIVER_EMAIL]),
+        "email_configured": all([SENDGRID_API_KEY, SENDER_EMAIL, RECEIVER_EMAIL]),
         "version": "2.0.0"
     }
 
