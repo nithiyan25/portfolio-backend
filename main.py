@@ -37,7 +37,9 @@ DB_CONFIG = {
     'user': os.getenv("DB_USER", "root"),
     'password': os.getenv("DB_PASSWORD", ""),
     'database': os.getenv("DB_NAME", "portfolio_db"),
-    'port': int(os.getenv("DB_PORT", "3306"))
+    'port': int(os.getenv("DB_PORT", "3306")),
+    'ssl_disabled': False,      
+    'ssl_verify_cert': False,   
 }
 
 # Email configuration
@@ -385,4 +387,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=5000)
+
 
