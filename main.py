@@ -19,7 +19,7 @@ app = FastAPI(title="Portfolio API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173", 
+        "http://localhost:5173",
         "http://localhost:3000",
         "https://portfolio-frontend-nithiyans-projects.vercel.app",
         "https://portfolio-frontend-orcin-sigma.vercel.app",
@@ -30,26 +30,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── App start time (used in /health uptime) ───────────────────────────────────
+_START_TIME = datetime.utcnow()
+
 # Database configuration
 DB_CONFIG = {
-    'host': os.getenv("DB_HOST", "localhost"),
-    'user': os.getenv("DB_USER", "root"),
-    'password': os.getenv("DB_PASSWORD", ""),
-    'database': os.getenv("DB_NAME", "portfolio_db"),
-    'port': int(os.getenv("DB_PORT", "3306")),
-    'ssl_disabled': False,      
-    'ssl_verify_cert': False,   
+    'host':            os.getenv("DB_HOST", "localhost"),
+    'user':            os.getenv("DB_USER", "root"),
+    'password':        os.getenv("DB_PASSWORD", ""),
+    'database':        os.getenv("DB_NAME", "portfolio_db"),
+    'port':            int(os.getenv("DB_PORT", "3306")),
+    'ssl_disabled':    False,
+    'ssl_verify_cert': False,
 }
 
 # Email configuration - SENDGRID
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
+SENDER_EMAIL     = os.getenv("SENDER_EMAIL")
+RECEIVER_EMAIL   = os.getenv("RECEIVER_EMAIL")
 
-# Pydantic Models
+
+# ── Pydantic Models ───────────────────────────────────────────────────────────
+
 class ContactMessage(BaseModel):
-    name: str
-    email: EmailStr
+    name:    str
+    email:   EmailStr
     message: str
 
 class ContactResponse(BaseModel):
@@ -57,50 +62,52 @@ class ContactResponse(BaseModel):
     message: str
 
 class Profile(BaseModel):
-    id: int
-    name: str
-    title: str
-    bio: Optional[str]
-    email: Optional[str]
-    phone: Optional[str]
-    location: Optional[str]
-    github_url: Optional[str]
-    linkedin_url: Optional[str]
-    twitter_url: Optional[str]
+    id:            int
+    name:          str
+    title:         str
+    bio:           Optional[str]
+    email:         Optional[str]
+    phone:         Optional[str]
+    location:      Optional[str]
+    github_url:    Optional[str]
+    linkedin_url:  Optional[str]
+    twitter_url:   Optional[str]
     profile_image: Optional[str]
-    resume_url: Optional[str]
+    resume_url:    Optional[str]
 
 class Skill(BaseModel):
-    id: int
-    category: str
-    name: str
+    id:          int
+    category:    str
+    name:        str
     proficiency: int
-    icon: Optional[str]
+    icon:        Optional[str]
 
 class Project(BaseModel):
-    id: int
-    title: str
-    description: Optional[str]
+    id:               int
+    title:            str
+    description:      Optional[str]
     long_description: Optional[str]
-    image_url: Optional[str]
-    github_url: Optional[str]
-    live_url: Optional[str]
-    category: Optional[str]
-    featured: bool
-    technologies: List[str] = []
+    image_url:        Optional[str]
+    github_url:       Optional[str]
+    live_url:         Optional[str]
+    category:         Optional[str]
+    featured:         bool
+    technologies:     List[str] = []
 
 class Experience(BaseModel):
-    id: int
-    company: str
-    position: str
+    id:          int
+    company:     str
+    position:    str
     description: Optional[str]
-    start_date: Optional[str]
-    end_date: Optional[str]
-    is_current: bool
-    location: Optional[str]
+    start_date:  Optional[str]
+    end_date:    Optional[str]
+    is_current:  bool
+    location:    Optional[str]
     company_url: Optional[str]
 
-# Database Connection Helper
+
+# ── Database Helper ───────────────────────────────────────────────────────────
+
 def get_db_connection():
     try:
         connection = mysql.connector.connect(**DB_CONFIG)
@@ -109,10 +116,11 @@ def get_db_connection():
         print(f"Error connecting to MySQL: {e}")
         raise HTTPException(status_code=500, detail="Database connection failed")
 
-# Email Function - SENDGRID VERSION
+
+# ── Email Helper ──────────────────────────────────────────────────────────────
+
 def send_email(contact: ContactMessage):
-    """Send email notification using SendGrid"""
-    
+    """Send email notification using SendGrid."""
     html_content = f"""
     <html>
       <body style="font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f4;">
@@ -135,17 +143,15 @@ def send_email(contact: ContactMessage):
       </body>
     </html>
     """
-    
+
     message = Mail(
         from_email=SENDER_EMAIL,
         to_emails=RECEIVER_EMAIL,
         subject=f"Portfolio Contact: {contact.name}",
-        html_content=html_content
+        html_content=html_content,
     )
-    
-    # Set reply-to as the contact's email
     message.reply_to = contact.email
-    
+
     try:
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         response = sg.send(message)
@@ -155,118 +161,172 @@ def send_email(contact: ContactMessage):
         print(f"Error sending email via SendGrid: {str(e)}")
         return False
 
-# API Endpoints
+
+# ── Health Routes (for KeepAlive pinger) ─────────────────────────────────────
 
 @app.get("/")
 async def root():
-    """Health check endpoint"""
-    return {"status": "ok", "message": "Portfolio API v2.0 with MySQL is running"}
+    """
+    Lightweight root ping — no DB call.
+    Use this URL in KeepAlive: https://your-app.onrender.com/
+    """
+    uptime_seconds = int((datetime.utcnow() - _START_TIME).total_seconds())
+    return {
+        "status":  "ok",
+        "service": "Portfolio API",
+        "version": "2.0.0",
+        "uptime":  uptime_seconds,
+    }
+
+
+@app.get("/health")
+async def health():
+    """
+    Health check that also wakes the database.
+    Use this URL in KeepAlive: https://your-app.onrender.com/health
+    Runs a minimal SELECT 1 query — just enough to keep the DB connection alive,
+    no heavy table scans or business logic.
+    """
+    uptime_seconds = int((datetime.utcnow() - _START_TIME).total_seconds())
+    db_alive = False
+
+    try:
+        connection = mysql.connector.connect(**DB_CONFIG)
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1")          # lightest possible query — just wakes the DB
+        cursor.fetchone()
+        cursor.close()
+        connection.close()
+        db_alive = True
+    except Exception as e:
+        print(f"[HEALTH] DB wake-up failed: {e}")
+
+    return {
+        "status":   "ok" if db_alive else "degraded",
+        "service":  "Portfolio API",
+        "version":  "2.0.0",
+        "uptime":   uptime_seconds,
+        "database": "awake" if db_alive else "unreachable",
+    }
+
+
+@app.get("/api/health")
+async def api_health_check():
+    """
+    Detailed health check — verifies DB + email config.
+    Use this only for manual diagnostics, not for frequent pinging.
+    """
+    db_connected = False
+    try:
+        connection = get_db_connection()
+        connection.close()
+        db_connected = True
+    except Exception:
+        pass
+
+    uptime_seconds = int((datetime.utcnow() - _START_TIME).total_seconds())
+
+    return {
+        "status":            "healthy" if db_connected else "degraded",
+        "database_connected": db_connected,
+        "email_configured":   all([SENDGRID_API_KEY, SENDER_EMAIL, RECEIVER_EMAIL]),
+        "version":           "2.0.0",
+        "uptime":            uptime_seconds,
+    }
+
+
+# ── API Endpoints ─────────────────────────────────────────────────────────────
 
 @app.get("/api/profile", response_model=Profile)
 async def get_profile():
-    """Get profile information"""
+    """Get profile information."""
     connection = get_db_connection()
     cursor = connection.cursor(dictionary=True)
-    
     try:
         cursor.execute("SELECT * FROM profile LIMIT 1")
         profile = cursor.fetchone()
-        
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
-        
         return profile
     finally:
         cursor.close()
         connection.close()
 
+
 @app.get("/api/skills")
 async def get_skills():
-    """Get all skills grouped by category"""
+    """Get all skills grouped by category."""
     connection = get_db_connection()
     cursor = connection.cursor(dictionary=True)
-    
     try:
         cursor.execute("""
-            SELECT category, name, proficiency, icon 
-            FROM skills 
+            SELECT category, name, proficiency, icon
+            FROM skills
             ORDER BY category, display_order
         """)
         skills = cursor.fetchall()
-        
-        # Group by category
+
         grouped = {}
         for skill in skills:
             category = skill['category']
             if category not in grouped:
                 grouped[category] = []
             grouped[category].append({
-                'name': skill['name'],
+                'name':        skill['name'],
                 'proficiency': skill['proficiency'],
-                'icon': skill['icon']
+                'icon':        skill['icon'],
             })
-        
-        # Format for frontend
-        result = [
+
+        return [
             {'category': category, 'items': [s['name'] for s in items]}
             for category, items in grouped.items()
         ]
-        
-        return result
     finally:
         cursor.close()
         connection.close()
 
+
 @app.get("/api/projects")
 async def get_projects(category: Optional[str] = None, featured: Optional[bool] = None):
-    """Get all projects with optional filtering"""
+    """Get all projects with optional filtering."""
     connection = get_db_connection()
     cursor = connection.cursor(dictionary=True)
-    
     try:
         query = """
             SELECT p.*, GROUP_CONCAT(pt.technology) as technologies
             FROM projects p
             LEFT JOIN project_technologies pt ON p.id = pt.project_id
         """
-        
-        conditions = []
-        params = []
-        
+        conditions, params = [], []
+
         if category:
             conditions.append("p.category = %s")
             params.append(category)
-        
         if featured is not None:
             conditions.append("p.featured = %s")
             params.append(featured)
-        
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
-        
+
         query += " GROUP BY p.id ORDER BY p.display_order, p.created_at DESC"
-        
         cursor.execute(query, params)
         projects = cursor.fetchall()
-        
-        # Format technologies as list
+
         for project in projects:
-            if project['technologies']:
-                project['technologies'] = project['technologies'].split(',')
-            else:
-                project['technologies'] = []
-        
+            project['technologies'] = (
+                project['technologies'].split(',') if project['technologies'] else []
+            )
         return projects
     finally:
         cursor.close()
         connection.close()
 
+
 @app.get("/api/projects/{project_id}")
 async def get_project(project_id: int):
-    """Get single project details"""
+    """Get single project details."""
     connection = get_db_connection()
     cursor = connection.cursor(dictionary=True)
-    
     try:
         cursor.execute("""
             SELECT p.*, GROUP_CONCAT(pt.technology) as technologies
@@ -275,63 +335,54 @@ async def get_project(project_id: int):
             WHERE p.id = %s
             GROUP BY p.id
         """, (project_id,))
-        
         project = cursor.fetchone()
-        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
-        
-        if project['technologies']:
-            project['technologies'] = project['technologies'].split(',')
-        else:
-            project['technologies'] = []
-        
+        project['technologies'] = (
+            project['technologies'].split(',') if project['technologies'] else []
+        )
         return project
     finally:
         cursor.close()
         connection.close()
 
+
 @app.get("/api/experience")
 async def get_experience():
-    """Get work experience"""
+    """Get work experience."""
     connection = get_db_connection()
     cursor = connection.cursor(dictionary=True)
-    
     try:
         cursor.execute("""
-            SELECT * FROM experience 
+            SELECT * FROM experience
             ORDER BY is_current DESC, start_date DESC
         """)
-        experience = cursor.fetchall()
-        return experience
+        return cursor.fetchall()
     finally:
         cursor.close()
         connection.close()
 
+
 @app.post("/api/contact", response_model=ContactResponse)
 async def contact(contact_data: ContactMessage):
-    """Handle contact form submissions"""
+    """Handle contact form submissions."""
     connection = get_db_connection()
     cursor = connection.cursor()
-    
     try:
-        # Save to database
         cursor.execute("""
             INSERT INTO contact_messages (name, email, message)
             VALUES (%s, %s, %s)
         """, (contact_data.name, contact_data.email, contact_data.message))
         connection.commit()
-        
-        # Send email if configured
-        email_sent = False
+
         if all([SENDGRID_API_KEY, SENDER_EMAIL, RECEIVER_EMAIL]):
             email_sent = send_email(contact_data)
             if not email_sent:
                 print("Warning: Email sending failed, but message was saved to database")
-        
+
         return ContactResponse(
             success=True,
-            message="Your message has been sent successfully! I'll get back to you soon."
+            message="Your message has been sent successfully! I'll get back to you soon.",
         )
     except Exception as e:
         connection.rollback()
@@ -340,49 +391,27 @@ async def contact(contact_data: ContactMessage):
         cursor.close()
         connection.close()
 
+
 @app.get("/api/stats")
 async def get_stats():
-    """Get portfolio statistics"""
+    """Get portfolio statistics."""
     connection = get_db_connection()
     cursor = connection.cursor(dictionary=True)
-    
     try:
         stats = {}
-        
-        # Count projects
         cursor.execute("SELECT COUNT(*) as count FROM projects")
         stats['projects'] = cursor.fetchone()['count']
-        
-        # Count skills
         cursor.execute("SELECT COUNT(*) as count FROM skills")
         stats['skills'] = cursor.fetchone()['count']
-        
-        # Count messages
         cursor.execute("SELECT COUNT(*) as count FROM contact_messages")
         stats['messages'] = cursor.fetchone()['count']
-        
         return stats
     finally:
         cursor.close()
         connection.close()
 
-@app.get("/api/health")
-async def health_check():
-    """Detailed health check"""
-    db_connected = False
-    try:
-        connection = get_db_connection()
-        connection.close()
-        db_connected = True
-    except:
-        pass
-    
-    return {
-        "status": "healthy",
-        "database_connected": db_connected,
-        "email_configured": all([SENDGRID_API_KEY, SENDER_EMAIL, RECEIVER_EMAIL]),
-        "version": "2.0.0"
-    }
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn
